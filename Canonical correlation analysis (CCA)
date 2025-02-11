@@ -1,0 +1,86 @@
+#import required libraries
+library(CCP)
+library(CCA)
+library(GGally)
+library(ggplot2)
+
+#Importing metabolome and methylome datasets
+
+metabolome <- read.csv("C:/Users/Mohammad/Desktop/new/metabolome.csv")
+methylome <- read.csv ("C:/Users/Mohammad/Desktop/new/methyome2.csv")
+
+#Droping cell line names
+x <- metabolome [, 3:227]
+y <- methylome [, 3:36]
+
+#Assesing correlation between metabolome and methylation marks
+cc <- cc(x,y)
+cormat <- matcor (x,y)
+
+#correlation between x and y datasets
+xycor <- cormat$XYcor
+xycor <- as.data.frame(xycor)
+
+#Conducting CCA by using CCA library
+cc1 <- cc(x,y)
+cc1$cor
+
+#Extracting loadings
+cc2 <- comput(x, y, cc1)
+cc2[3:6]
+cc2
+
+# tests of canonical dimensions
+rho <- cc1$cor
+## Define number of observations, number of variables in first set, and number of variables in the second set
+n <- dim(x)[1]
+p <- length(x)
+q <- length(y)
+
+## Calculate p-valuesus:
+p.asym(rho, n, p, q, tstat = "Wilks")
+p.asym(rho, n, p, q, tstat = "Hotelling")
+p.asym(rho, n, p, q, tstat = "Pillai")
+p.asym(rho, n, p, q, tstat = "Roy")
+
+# standardized x canonical coefficients
+s1 <- diag(sqrt(diag(cov(x))))
+
+#for significant CVs
+xstd.coeff <- s1 %*% cc1$xcoef[,1:6]
+View(as.data.frame(xstd.coeff))
+
+#Sorted Correlation coefficients for X and Y sets
+library(dplyr)
+library(tidyr)
+
+#For X set(metabolome)
+corx1<- 
+  cor(x) %>%
+  as.data.frame() %>%
+  mutate(var1 = rownames(.)) %>%
+  gather(var2, value, -var1) %>%
+  arrange(desc(value)) %>%
+  group_by(value) %>%
+  filter(row_number()==1)
+
+#For y set (Methylation)
+cory1<- 
+  cor(y) %>%
+  as.data.frame() %>%
+  mutate(var1 = rownames(.)) %>%
+  gather(var2, value, -var1) %>%
+  arrange(desc(value)) %>%
+  group_by(value) %>%
+  filter(row_number()==1)
+
+#exporting loadings. as csv file
+write.csv(cc2$corr.X.xscores,"C:/Users/Mohammad/Desktop/X.xscore.csv", row.names = TRUE)
+write.csv(cc2$corr.Y.yscores,"C:/Users/Mohammad/Desktop/Y.yscore.csv", row.names = TRUE)
+
+cell_id <- read.csv("C:/Users/Mohammad/Desktop/cell_id.csv")
+#creating a separate dataset for methylation CVs
+methylCV <- data.frame(row.names = cell_id[,1])
+
+#exporting the output as a csv file 
+write.csv(methylCV,"C:/Users/Mohammad/Desktop/methylCV.csv", row.names = TRUE)
