@@ -1,0 +1,104 @@
+#Importing libraries
+import numpy as np
+import pandas as pd
+from sklearn.metrics import mean_squared_error,  r2_score
+from sklearn.model_selection import cross_val_score, KFold, train_test_split, LeaveOneOut
+from sklearn.inspection import permutation_importance
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.inspection import permutation_importance
+from sklearn.model_selection import permutation_test_score
+import matplotlib.pyplot as plt
+import seaborn as sns
+sns.set() 
+
+#Importing the dataframes
+df = pd.read_csv ('/content/drive/MyDrive/dfs/GSE230932/Org/RNAseq(1).csv',  index_col=0)
+meth = pd.read_csv ('/content/drive/MyDrive/dfs/GSE230932/Org/T-H3K4me3.csv',  index_col=0)
+
+#Converting Gene symbol to ENSG ID to find the intersection of CCLE and GEO RNAseq data
+import mygene
+
+CCLE_genes = pd.read_csv("/content/drive/MyDrive/Thesis datasets/meta_genes_df.csv")
+
+
+CCLElist = CCLE_genes.columns.tolist()
+
+mg = mygene.MyGeneInfo()
+results = mg.querymany(CCLElist, scopes='ensembl.gene', fields='symbol', species='human')
+ensg_to_symbol = {item['query']: item.get('symbol', item['query']) for item in results}
+symbols = [ensg_to_symbol[ensg] for ensg in CCLElist]
+
+print(symbols)
+
+
+mylist = symbols
+
+# filtering only columns that are in the list
+filtered = df[[col for col in df.columns if col in mylist]]
+print(filtered.shape)
+
+#renaming the dfs
+RNAseq = filtered
+Methyl = meth
+
+#StandardScaling Methylation data to be in the same scale of CCLE data
+
+sc = StandardScaler ()
+sc.fit (Methyl)
+sc_meth = sc.fit_transform (Methyl)
+scaled_meth = pd.DataFrame(sc_meth, columns=meth.columns)
+print("\nScaled DataFrame:")
+print(scaled_meth)
+
+
+# Trining the RF models on RNAseq and averaged Chipseq from GEO
+
+X = RNAseq
+Y = scaled_meth
+
+histone_marks = Y.columns.tolist()
+n_samples = X.shape[0]
+
+# dict for evaluation
+nrmse_results = {}
+feature_importances = {}
+
+
+# Loop over histone marks to model on each histone mark per loop (1/5)
+
+for mark in histone_marks:
+    y = Y[mark].values
+    y_pred = np.zeros(n_samples)
+
+    loo = LeaveOneOut()
+
+    for train_idx, test_idx in loo.split(X):
+        X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+        y_train, y_test = y[train_idx], y[test_idx]
+
+        rf = RandomForestRegressor(n_estimators=500, random_state=42)
+        rf.fit(X_train, y_train)
+        y_pred[test_idx] = rf.predict(X_test)
+
+
+    # NRMSE for evaluation same as CCLE models
+
+    rmse = np.sqrt(mean_squared_error(y, y_pred))
+    y_range = y.max() - y.min()
+    nrmse = rmse / y_range
+    nrmse_results[mark] = nrmse
+
+
+    # Fit RF on teh data for feature importance
+
+    rf_mod= RandomForestRegressor(n_estimators=500, random_state=42)
+    rf_mod.fit(X, y)
+    feature_importances[mark] = pd.Series(rf_mod.feature_importances_, index=X.columns).sort_values(ascending=False)
+
+    print(f"{mark}: NRMSE = {nrmse:.3f}")
+
+
+for mark, fi in feature_importances.items():
+    fi.to_csv(f"RF_feature_importance_{mark}.csv")
+pd.Series(nrmse_results).to_csv("NRMSE_T_H3K4me3_results.csv")
